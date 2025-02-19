@@ -6,7 +6,7 @@ on:
 jobs:
   performance:
     name: macOS Performance Benchmark
-    runs-on: macos-15-large
+    runs-on: macos-15-xlarge
     steps:
     
     - name: Install stress tools (macOS)
