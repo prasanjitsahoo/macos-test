@@ -1,4 +1,4 @@
-name: macOS Performance Benchmark
+name: macOS Memory Performance Benchmark
 
 on:
   workflow_dispatch:
