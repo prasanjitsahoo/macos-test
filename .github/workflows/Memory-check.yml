@@ -77,6 +77,8 @@ jobs:
         # Store values in GitHub Actions environment variables
         echo "TOTAL_MEMORY=$adjusted_memory_mb" >> $GITHUB_ENV
         echo "USED_PERCENTAGE=$used_percentage" >> $GITHUB_ENV
+
+
     # - name: Benchmark Memory Read Speed
     #   shell: bash
     #   run: |
@@ -172,41 +174,289 @@ jobs:
       shell: bash
       run: |
         sysbench memory run
+
+    # - name: Customizing Block Size & Total Memory
+    #   shell: bash
+    #   run: |
+    #     sysbench memory --memory-block-size=1M --memory-total-size=10G run
     - name: Customizing Block Size & Total Memory
       shell: bash
       run: |
-        sysbench memory --memory-block-size=1M --memory-total-size=10G run
+        echo "============================================"
+        echo "🚀 Starting Memory Benchmark Test with Custom Block Size & Total Memory"
+        echo "============================================"
+    
+        # Define test parameters
+        MEMORY_BLOCK_SIZE="1M"
+        TOTAL_MEMORY="10G"
+        MIN_THROUGHPUT=500  # Minimum acceptable throughput in MB/sec
+    
+        # Run sysbench memory benchmark
+        START_TIME=$(date +%s)
+        sysbench memory --memory-block-size=$MEMORY_BLOCK_SIZE --memory-total-size=$TOTAL_MEMORY run | tee memory_test.txt
+        END_TIME=$(date +%s)
+        EXECUTION_TIME=$((END_TIME - START_TIME))
+    
+        echo "Execution Time: $EXECUTION_TIME seconds"
+    
+        # Extract Memory Throughput (MB/sec)
+        THROUGHPUT=$(grep "MiB transferred" memory_test.txt | awk -F'[()]' '{print $2}' | awk '{print $1}')
+    
+        # Validate throughput extraction
+        if [[ -z "$THROUGHPUT" || ! "$THROUGHPUT" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "⚠️ Warning: Could not extract a valid memory throughput value."
+            THROUGHPUT=0  # Default to 0 if extraction fails
+        else
+            echo "✅ Extracted Memory Throughput: ${THROUGHPUT} MB/sec"
+        fi
+    
+        # Performance validation check
+        if [[ $(echo "$THROUGHPUT < $MIN_THROUGHPUT" | bc -l) -eq 1 ]]; then
+            echo "⚠️ Warning: Memory throughput ($THROUGHPUT MB/sec) is below the expected threshold ($MIN_THROUGHPUT MB/sec)."
+        else
+            echo "✅ Memory throughput is within acceptable limits."
+        fi
+    
+        # Export metrics for logging
+        echo "EXECUTION_TIME=$EXECUTION_TIME" >> $GITHUB_ENV
+        echo "THROUGHPUT=$THROUGHPUT" >> $GITHUB_ENV
+    
+        echo "============================================"
+        echo "✅ Memory Benchmark Completed"
+        echo "============================================"
+
+    # - name: Multi-Threaded Memory Test
+    #   shell: bash
+    #   run: |
+    #     sysbench memory --memory-block-size=1M --memory-total-size=${{ env.TOTAL_MEMORY }}M --memory-oper=read --threads=8 run
+    #     sysbench memory --memory-block-size=1M --memory-total-size=${{ env.TOTAL_MEMORY }}M --memory-oper=write --threads=8 run
     - name: Multi-Threaded Memory Test
       shell: bash
       run: |
-        sysbench memory --memory-block-size=1M --memory-total-size=${{ env.TOTAL_MEMORY }}M --memory-oper=read --threads=8 run
-        sysbench memory --memory-block-size=1M --memory-total-size=${{ env.TOTAL_MEMORY }}M --memory-oper=write --threads=8 run
+        echo "============================================"
+        echo "🚀 Starting Multi-Threaded Memory Test (8 Threads)"
+        echo "============================================"
+    
+        # Define test parameters
+        MEMORY_BLOCK_SIZE="1M"
+        TOTAL_MEMORY="${{ env.TOTAL_MEMORY }}M"
+        MIN_THROUGHPUT=500  # Minimum acceptable throughput in MB/sec
+    
+        # Run memory read test
+        echo "📌 Running Multi-Threaded Memory Read Test..."
+        START_TIME=$(date +%s)
+        sysbench memory --memory-block-size=$MEMORY_BLOCK_SIZE --memory-total-size=$TOTAL_MEMORY --memory-oper=read --threads=8 run | tee memory_read.txt
+        END_TIME=$(date +%s)
+        EXECUTION_TIME_READ=$((END_TIME - START_TIME))
+        MEMORY_READ_SPEED=$(grep "MiB transferred" memory_read.txt | awk -F'[()]' '{print $2}' | awk '{print $1}')
+    
+        # Validate read throughput extraction
+        if [[ -z "$MEMORY_READ_SPEED" || ! "$MEMORY_READ_SPEED" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "⚠️ Warning: Could not extract a valid memory read throughput."
+            MEMORY_READ_SPEED=0
+        else
+            echo "✅ Extracted Multi-Threaded Memory Read Throughput: ${MEMORY_READ_SPEED} MB/sec"
+        fi
+    
+        # Run memory write test
+        echo "📌 Running Multi-Threaded Memory Write Test..."
+        START_TIME=$(date +%s)
+        sysbench memory --memory-block-size=$MEMORY_BLOCK_SIZE --memory-total-size=$TOTAL_MEMORY --memory-oper=write --threads=8 run | tee memory_write.txt
+        END_TIME=$(date +%s)
+        EXECUTION_TIME_WRITE=$((END_TIME - START_TIME))
+        MEMORY_WRITE_SPEED=$(grep "MiB transferred" memory_write.txt | awk -F'[()]' '{print $2}' | awk '{print $1}')
+    
+        # Validate write throughput extraction
+        if [[ -z "$MEMORY_WRITE_SPEED" || ! "$MEMORY_WRITE_SPEED" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "⚠️ Warning: Could not extract a valid memory write throughput."
+            MEMORY_WRITE_SPEED=0
+        else
+            echo "✅ Extracted Multi-Threaded Memory Write Throughput: ${MEMORY_WRITE_SPEED} MB/sec"
+        fi
+    
+        # Performance validation check for read
+        if [[ $(echo "$MEMORY_READ_SPEED < $MIN_THROUGHPUT" | bc -l) -eq 1 ]]; then
+            echo "⚠️ Warning: Multi-threaded memory read speed ($MEMORY_READ_SPEED MB/sec) is below the expected threshold ($MIN_THROUGHPUT MB/sec)."
+        else
+            echo "✅ Multi-threaded memory read speed is within acceptable limits."
+        fi
+    
+        # Performance validation check for write
+        if [[ $(echo "$MEMORY_WRITE_SPEED < $MIN_THROUGHPUT" | bc -l) -eq 1 ]]; then
+            echo "⚠️ Warning: Multi-threaded memory write speed ($MEMORY_WRITE_SPEED MB/sec) is below the expected threshold ($MIN_THROUGHPUT MB/sec)."
+        else
+            echo "✅ Multi-threaded memory write speed is within acceptable limits."
+        fi
+    
+        # Calculate total execution time
+        TOTAL_EXECUTION_TIME=$((EXECUTION_TIME_READ + EXECUTION_TIME_WRITE))
+    
+        # Export results for further analysis
+        echo "EXECUTION_TIME=$TOTAL_EXECUTION_TIME" >> $GITHUB_ENV
+        echo "THROUGHPUT_READ=$MEMORY_READ_SPEED" >> $GITHUB_ENV
+        echo "THROUGHPUT_WRITE=$MEMORY_WRITE_SPEED" >> $GITHUB_ENV
+    
+        echo "============================================"
+        echo "✅ Multi-Threaded Memory Test Completed"
+        echo "============================================"
+
+    # - name: Running for a Fixed Time
+    #   shell: bash
+    #   run: |
+    #     sysbench memory --memory-block-size=1M --memory-total-size=0 --memory-oper=read --threads=8 --time=30 run
+    #     sysbench memory --memory-block-size=1M --memory-total-size=0 --memory-oper=write --threads=8 --time=30 run
     - name: Running for a Fixed Time
       shell: bash
       run: |
-        sysbench memory --memory-block-size=1M --memory-total-size=0 --memory-oper=read --threads=8 --time=30 run
-        sysbench memory --memory-block-size=1M --memory-total-size=0 --memory-oper=write --threads=8 --time=30 run
+        echo "============================================"
+        echo "🚀 Running Memory Benchmark for a Fixed Time (30 seconds per test)"
+        echo "============================================"
+    
+        # Define test parameters
+        MEMORY_BLOCK_SIZE="1M"
+        THREADS=8
+        TEST_DURATION=30  # Run test for 30 seconds
+        MIN_THROUGHPUT=500  # Minimum acceptable throughput in MB/sec
+    
+        # Run memory read test
+        echo "📌 Running Memory Read Test for $TEST_DURATION seconds..."
+        START_TIME=$(date +%s)
+        sysbench memory --memory-block-size=$MEMORY_BLOCK_SIZE --memory-total-size=0 --memory-oper=read --threads=$THREADS --time=$TEST_DURATION run | tee memory_read_fixed.txt
+        END_TIME=$(date +%s)
+        EXECUTION_TIME_READ=$((END_TIME - START_TIME))
+        MEMORY_READ_SPEED=$(grep "MiB transferred" memory_read_fixed.txt | awk -F'[()]' '{print $2}' | awk '{print $1}')
+    
+        # Validate read throughput extraction
+        if [[ -z "$MEMORY_READ_SPEED" || ! "$MEMORY_READ_SPEED" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "⚠️ Warning: Could not extract a valid memory read throughput."
+            MEMORY_READ_SPEED=0
+        else
+            echo "✅ Extracted Memory Read Throughput: ${MEMORY_READ_SPEED} MB/sec"
+        fi
+    
+        # Run memory write test
+        echo "📌 Running Memory Write Test for $TEST_DURATION seconds..."
+        START_TIME=$(date +%s)
+        sysbench memory --memory-block-size=$MEMORY_BLOCK_SIZE --memory-total-size=0 --memory-oper=write --threads=$THREADS --time=$TEST_DURATION run | tee memory_write_fixed.txt
+        END_TIME=$(date +%s)
+        EXECUTION_TIME_WRITE=$((END_TIME - START_TIME))
+        MEMORY_WRITE_SPEED=$(grep "MiB transferred" memory_write_fixed.txt | awk -F'[()]' '{print $2}' | awk '{print $1}')
+    
+        # Validate write throughput extraction
+        if [[ -z "$MEMORY_WRITE_SPEED" || ! "$MEMORY_WRITE_SPEED" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "⚠️ Warning: Could not extract a valid memory write throughput."
+            MEMORY_WRITE_SPEED=0
+        else
+            echo "✅ Extracted Memory Write Throughput: ${MEMORY_WRITE_SPEED} MB/sec"
+        fi
+    
+        # Performance validation check for read
+        if [[ $(echo "$MEMORY_READ_SPEED < $MIN_THROUGHPUT" | bc -l) -eq 1 ]]; then
+            echo "⚠️ Warning: Memory read speed ($MEMORY_READ_SPEED MB/sec) is below the expected threshold ($MIN_THROUGHPUT MB/sec)."
+        else
+            echo "✅ Memory read speed is within acceptable limits."
+        fi
+    
+        # Performance validation check for write
+        if [[ $(echo "$MEMORY_WRITE_SPEED < $MIN_THROUGHPUT" | bc -l) -eq 1 ]]; then
+            echo "⚠️ Warning: Memory write speed ($MEMORY_WRITE_SPEED MB/sec) is below the expected threshold ($MIN_THROUGHPUT MB/sec)."
+        else
+            echo "✅ Memory write speed is within acceptable limits."
+        fi
+    
+        # Calculate total execution time
+        TOTAL_EXECUTION_TIME=$((EXECUTION_TIME_READ + EXECUTION_TIME_WRITE))
+    
+        # Export results for further analysis
+        echo "EXECUTION_TIME=$TOTAL_EXECUTION_TIME" >> $GITHUB_ENV
+        echo "THROUGHPUT_READ=$MEMORY_READ_SPEED" >> $GITHUB_ENV
+        echo "THROUGHPUT_WRITE=$MEMORY_WRITE_SPEED" >> $GITHUB_ENV
+    
+        echo "============================================"
+        echo "✅ Memory Benchmark for Fixed Time Completed"
+        echo "============================================"
+
+    # - name: Extreme Stress Test
+    #   shell: bash
+    #   run: |
+    #     echo "⚠️ Running an extreme memory stress test! This may take a long time."
+    #     sysbench memory --memory-block-size=4M --memory-total-size=100G --memory-oper=write --threads=16 run || echo "⚠️ Test may have failed due to system limits."
+    #     echo "========================================"
+    #     echo "🚀 Memory Metrics Test End"
+    #     echo "========================================"
     - name: Extreme Stress Test
       shell: bash
       run: |
-        echo "⚠️ Running an extreme memory stress test! This may take a long time."
-        sysbench memory --memory-block-size=4M --memory-total-size=100G --memory-oper=write --threads=16 run || echo "⚠️ Test may have failed due to system limits."
-        echo "========================================"
-        echo "🚀 Memory Metrics Test End"
-        echo "========================================"
+          echo "========================================"
+          echo "⚠️ Running an EXTREME memory stress test! This may take a long time."
+          echo "========================================"
+      
+          # Define test parameters
+          MEMORY_BLOCK_SIZE="4M"
+          TOTAL_MEMORY="100G"
+          THREADS=16
+          MIN_THROUGHPUT=1000  # Minimum acceptable throughput in MB/sec
+      
+          # Start timer
+          START_TIME=$(date +%s)
+      
+          # Run stress test and capture logs
+          sysbench memory --memory-block-size=$MEMORY_BLOCK_SIZE --memory-total-size=$TOTAL_MEMORY --memory-oper=write --threads=$THREADS run | tee memory_stress_test.txt
+          EXIT_STATUS=$?
+      
+          # End timer
+          END_TIME=$(date +%s)
+          EXECUTION_TIME=$((END_TIME - START_TIME))
+      
+          # Check if the test failed
+          if [[ $EXIT_STATUS -ne 0 ]]; then
+              echo "❌ Memory stress test failed due to system limits or OOM (Out of Memory) conditions."
+              THROUGHPUT=0
+          else
+              # Extract Memory Throughput (MB/sec)
+              THROUGHPUT=$(grep "MiB transferred" memory_stress_test.txt | awk -F'[()]' '{print $2}' | awk '{print $1}')
+      
+              # Validate throughput extraction
+              if [[ -z "$THROUGHPUT" || ! "$THROUGHPUT" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+                  echo "⚠️ Warning: Could not extract a valid memory throughput value."
+                  THROUGHPUT=0
+              else
+                  echo "✅ Extracted Memory Write Throughput: ${THROUGHPUT} MB/sec"
+              fi
+          fi
+      
+          # Performance validation check
+          if [[ $(echo "$THROUGHPUT < $MIN_THROUGHPUT" | bc -l) -eq 1 ]]; then
+              echo "⚠️ Warning: Memory write speed ($THROUGHPUT MB/sec) is below the expected threshold ($MIN_THROUGHPUT MB/sec)."
+          else
+              echo "✅ Memory write speed is within acceptable limits."
+          fi
+      
+          # Store metrics in environment variables
+          echo "EXECUTION_TIME=$EXECUTION_TIME" >> $GITHUB_ENV
+          echo "THROUGHPUT=$THROUGHPUT" >> $GITHUB_ENV
+      
+          echo "========================================"
+          echo "✅ Memory Stress Test Completed"
+          echo "========================================"
+
         
  # ------------------------------- CPU Disk I/O Test cases --------------------
  
     - name: Monitor CPU performance
       shell: bash
       run: |
+        echo "Monitor number of CPU in our VM"
+        sysctl hw.physicalcpu hw.logicalcpu
         echo "Monitor CPU using top"
         top -l 1 -n 10 -s 1
+
     - name: Measure Disk I/O speed using dd
       shell: bash
       run: |
         echo "Testing write speed using dd..."
         dd if=/dev/zero of=testfile bs=1m count=1024 oflag=direct
+
     - name: Calculate Disk I/O Operations
       shell: bash
       run: |
@@ -236,6 +486,7 @@ jobs:
       shell: bash
       run: |
         brew install stress-ng
+
     - name: Run CPU Stress Test
       shell: bash
       run: |
@@ -330,7 +581,9 @@ jobs:
         
           echo "CPU Stress test completed. Check $LOG_FILE for details." | tee -a $LOG_FILE
           
+
           
+
       # Add Incremental Disk i/o Stress Test here
     - name: Run Incremental Disk I/O Stress Test
       shell: bash
@@ -342,21 +595,26 @@ jobs:
           DISK_OPS_MAX=10000        # Maximum number of disk operations (adjust as needed)
           DISK_SIZE=4G              # Size of the test file to use for stress
           LOG_FILE="disk_stress_results.log"  # Log file for results
+
           echo "Starting incremental disk I/O stress test..." | tee $LOG_FILE
           
           # Create an initial test file
           dd if=/dev/zero of=./testfile bs=1M count=1024 oflag=direct
           sync  # Ensure disk write is flushed
+
           # Loop for disk I/O stress test with increasing operations
           for ((disk_ops=$DISK_OPS_START; disk_ops<=$DISK_OPS_MAX; disk_ops+=$DISK_OPS_INCREMENT)); do
               echo "Running disk I/O stress with $disk_ops operations" | tee -a $LOG_FILE
+
               # Use dd to stress the disk by writing and reading data
               dd if=/dev/zero of=./testfile bs=1M count=$disk_ops oflag=direct 2>&1 | tee -a $LOG_FILE
               sync  # Ensure disk write is flushed
               sleep 2
+
               # Measure the performance using iostat to capture disk I/O stats
               echo "Calculating disk I/O operations..." | tee -a $LOG_FILE
               iostat -d 1 10 | tee -a $LOG_FILE
+
               # Check disk I/O operations (Reads/Writes)
               iostat_output=$(iostat -d | awk 'NR>2 {print $1 " reads=" $3 " writes=" $4}')
               echo "Disk I/O stats for current iteration:" | tee -a $LOG_FILE
@@ -367,11 +625,14 @@ jobs:
                 echo "❌ Error: Disk performance issue detected!" | tee -a $LOG_FILE
                 break  # Stop the test if performance issues are detected
               fi
+
               echo "---------------------------------------------" | tee -a $LOG_FILE
           done
+
           # Clean up: remove the test file
           rm -f ./testfile
           echo "Disk stress test completed. Check $LOG_FILE for details." | tee -a $LOG_FILE
+
           
       #memory read write stress test
     - name: Run Incremental Memory Read/Write Stress Test
