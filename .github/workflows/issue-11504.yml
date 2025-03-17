@@ -11,8 +11,8 @@ jobs:
     runs-on: macos-15
 
     steps:
-      - name: Select Xcode 16.2
-        run: sudo xcode-select -switch /Applications/Xcode_16.2.app
+      - name: Select Xcode 16.3
+        run: sudo xcode-select -switch /Applications/Xcode_16.3.app
 
       - name: Verify Xcode Version
         run: xcodebuild -version
