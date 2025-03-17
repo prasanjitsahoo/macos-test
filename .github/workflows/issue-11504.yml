@@ -1,4 +1,4 @@
-name: Check VisionOS SDK on macos-15-xlarge
+name: Check VisionOS SDK on macos-15-large
 
 on:
   push:
