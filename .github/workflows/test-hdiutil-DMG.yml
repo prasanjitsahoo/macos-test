@@ -1,5 +1,6 @@
 name: Repro DMG Error – With and Without Retry
 
+# Allow manual execution from GitHub UI with an optional build_id input
 on:
   workflow_dispatch:
     inputs:
@@ -9,20 +10,24 @@ on:
         default: "1"
 
 jobs:
+  # First Job: Run without any retry logic (pure test)
   no-retry:
     runs-on: macos-13
     name: No Retry – Build ${{ github.event.inputs.build_id }}
 
     steps:
+      # Create a fake macOS .app bundle with ~10MB random payload
       - name: Create realistic .app bundle (~10MB)
         run: |
           mkdir -p SampleApp/Sample.app/Contents/MacOS
           base64 /dev/urandom | head -c 10000000 > SampleApp/Sample.app/Contents/MacOS/Payload
           chmod +x SampleApp/Sample.app/Contents/MacOS/Payload
 
+      # Create output directory to store the resulting .dmg file
       - name: Create output folder
         run: mkdir output
 
+      # Run hdiutil create once – no retry logic
       - name: Run hdiutil create (no retry)
         run: |
           echo "Attempting DMG creation (no retry) for build ID ${{ github.event.inputs.build_id }}"
@@ -32,6 +37,7 @@ jobs:
                          -format UDZO \
                          output/Sample_${{ github.event.inputs.build_id }}.dmg
 
+      # If the above step fails, log what might be locking the DMG file
       - name: Debug Resource Usage
         if: failure()
         run: |
@@ -39,27 +45,32 @@ jobs:
           lsof | grep .dmg || true
           ps aux | grep hdiutil || true
 
+      # Upload the resulting .dmg file as an artifact (if created successfully)
       - name: Upload DMG (if created)
         if: success()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v3.1.2
         with:
           name: NoRetry-SampleApp-DMG-${{ github.event.inputs.build_id }}
           path: output/*.dmg
 
+  # Second Job: Run the same packaging logic, but with retry attempts
   with-retry:
     runs-on: macos-13
     name: With Retry – Build ${{ github.event.inputs.build_id }}
 
     steps:
+      # Create another fake .app bundle in a separate path
       - name: Create realistic .app bundle (~10MB)
         run: |
           mkdir -p App/Sample.app/Contents/MacOS
           base64 /dev/urandom | head -c 10000000 > App/Sample.app/Contents/MacOS/Payload
           chmod +x App/Sample.app/Contents/MacOS/Payload
 
+      # Create output directory
       - name: Create output folder
         run: mkdir output
 
+      # Run hdiutil create with a retry loop (up to 3 attempts with 2s delay)
       - name: Run hdiutil create with retry
         run: |
           echo "Attempting DMG creation (with retry) for build ID ${{ github.event.inputs.build_id }}"
@@ -75,6 +86,7 @@ jobs:
             }
           done
 
+      # Log active processes or file locks if the DMG creation fails
       - name: Debug Resource Usage
         if: failure()
         run: |
@@ -82,9 +94,10 @@ jobs:
           lsof | grep .dmg || true
           ps aux | grep hdiutil || true
 
+      # Upload the .dmg file as an artifact if creation succeeded
       - name: Upload DMG (if created)
         if: success()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v3.1.2
         with:
           name: Retry-SampleApp-DMG-${{ github.event.inputs.build_id }}
           path: output/*.dmg
