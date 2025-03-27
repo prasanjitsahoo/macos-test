@@ -50,7 +50,7 @@ jobs:
       # Upload artifact if successful
       - name: Upload DMG (if created)
         if: success()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: NoRetry-SampleApp-DMG-${{ github.event.inputs.build_id }}
           path: output/*.dmg
@@ -101,7 +101,7 @@ jobs:
       # Upload artifact if DMG is created
       - name: Upload DMG (if created)
         if: success()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Retry-SampleApp-DMG-${{ github.event.inputs.build_id }}
           path: output/*.dmg
