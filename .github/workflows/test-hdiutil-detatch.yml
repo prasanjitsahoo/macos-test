@@ -1,0 +1,44 @@
+name: hdiutil Stress Test (Detach)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  stress-test-detach:
+    runs-on: macos-13
+    timeout-minutes: 30
+
+    steps:
+      - name: Run hdiutil attach/detach stress loop (200 iterations)
+        run: |
+          failures=0
+          for i in {1..200}; do
+            echo "-- Run $i:"
+            mkdir template
+
+            hdiutil create -fs HFSX -layout SPUD -size 750m "template.dmg" \
+              -srcfolder template -format UDRW -volname "reproducer" || {
+              echo "❌ Failed to create DMG on run $i"
+              ((failures++))
+              rm -rf template template.dmg
+              continue
+            }
+
+            mkdir dmgmnt
+            hdiutil attach template.dmg -noautoopen -quiet -mountpoint dmgmnt
+
+            dev=$(hdiutil info | grep dmgmnt | grep "Apple_HFS" | awk '{print $1}')
+            echo " Detaching device: $dev"
+            hdiutil detach "$dev" -force || {
+              echo "⚠️ Detach failed on run $i"
+              ((failures++))
+            }
+
+            rm -rf dmgmnt template template.dmg
+            sleep 1
+          done
+
+          echo "Stress test complete with $failures failure(s)."
+
+      - name: Done
+        run: echo "Finished execution."
