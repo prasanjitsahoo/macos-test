@@ -1,0 +1,33 @@
+name: macOS SDK Check
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check-macos-sdk:
+    runs-on: macos-15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Show current Xcode path
+        run: xcode-select -p
+
+      - name: Show available SDKs
+        run: xcodebuild -showsdks
+
+      - name: List SDKs in filesystem
+        run: ls -l /Applications/Xcode*.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/
+
+      - name: Try building with default SDK
+        run: xcodebuild -version
+
+      - name: Test xcodebuild with explicit SDK path
+        run: |
+          SDK_PATH="/Applications/Xcode_16.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"
+          if [ -d "$SDK_PATH" ]; then
+            echo "✅ SDK exists at $SDK_PATH"
+          else
+            echo "❌ SDK not found at $SDK_PATH"
+            exit 1
+          fi
