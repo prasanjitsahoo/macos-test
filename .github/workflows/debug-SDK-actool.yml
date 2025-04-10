@@ -1,0 +1,59 @@
+name: macOS 15 SDK and Toolchain Debug
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-sdk-intel:
+    name: Test SDK & actool on macOS 15 Intel
+    runs-on: macos-15-large # Replace with your self-hosted Intel runner label
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Debug SDK and actool presence (Intel)
+        run: |
+          echo "🧭 Xcode path: $(xcode-select -p)"
+          
+          echo "📂 Checking SDK directory..."
+          ls -l /Applications/Xcode_16.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/
+
+          echo "🔍 Testing xcodebuild version..."
+          xcodebuild -version
+
+          echo "📋 Listing available SDKs..."
+          xcodebuild -showsdks
+
+          echo "🧰 Checking actool..."
+          if xcrun --find actool; then
+            echo "✅ actool found"
+          else
+            echo "❌ actool not found"
+          fi
+
+  test-sdk-arm:
+    name: Test SDK & actool on macOS 15 ARM
+    runs-on: macos-15-xlarge # Replace with your self-hosted ARM runner label
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Debug SDK and actool presence (ARM)
+        run: |
+          echo "🧭 Xcode path: $(xcode-select -p)"
+          
+          echo "📂 Checking SDK directory..."
+          ls -l /Applications/Xcode_16.3.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/
+
+          echo "🔍 Testing xcodebuild version..."
+          xcodebuild -version
+
+          echo "📋 Listing available SDKs..."
+          xcodebuild -showsdks
+
+          echo "🧰 Checking actool..."
+          if xcrun --find actool; then
+            echo "✅ actool found"
+          else
+            echo "❌ actool not found"
+          fi
