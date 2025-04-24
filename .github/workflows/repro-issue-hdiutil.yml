@@ -1,39 +1,51 @@
-name: Reproduce DMG Failure
+name: Reproduce hdiutil Resource Busy Error
 
-# Trigger this workflow manually from GitHub UI
 on:
   workflow_dispatch:
 
 jobs:
-  create-dmg:
-    runs-on: macos-13  # Targeting macOS 13 where the issue is commonly observed
+  reproduce-dmg-failure:
+    runs-on: macos-13
 
     steps:
-      # Step 1: Prepare a fake .app directory structure to simulate a macOS app
-      - name: Prepare dummy app
+      # Step 1: Prepare a dummy .app bundle
+      - name: Create dummy .app structure
         run: |
-          mkdir -p dist/TauonMusicBox.app/Contents  # Create required folders
-          echo "Dummy app" > dist/TauonMusicBox.app/Contents/Info.plist  # Add dummy file
+          mkdir -p dist/TauonMusicBox.app/Contents
+          echo "Dummy app content" > dist/TauonMusicBox.app/Contents/Info.plist
 
-      # Step 2: Attempt to create a DMG with retry logic
-      # This version WILL FAIL if `hdiutil` returns a non-zero exit code even once
-      - name: Create DMG with retries (will fail if hdiutil fails)
+      # Step 2: Create a dummy DMG and attach it (simulate disk usage/conflict)
+      - name: Create and attach dummy DMG
         run: |
-          mkdir -p dist/dmg  # Create output folder
-          APP_NAME="TauonMusicBox"  # App name and volume name
-          APP_PATH="dist/${APP_NAME}.app"  # Source folder for DMG
-          DMG_PATH="dist/dmg/${APP_NAME}-x64.dmg"  # Destination path for DMG
+          mkdir -p dummy
+          hdiutil create -volname "DummyVolume" -srcfolder dummy -ov -format UDZO dummy.dmg
+          hdiutil attach dummy.dmg || true  # Attach it without failing if it errors
 
-          max_tries=10  # Max number of retry attempts
-          i=0  # Initialize retry counter
+      # Step 3: Attempt to create another DMG while the dummy is attached
+      - name: Attempt to create actual DMG with retry (should reproduce issue)
+        run: |
+          mkdir -p dist/dmg
+          APP_NAME="TauonMusicBox"
+          APP_PATH="dist/${APP_NAME}.app"
+          DMG_PATH="dist/dmg/${APP_NAME}-x64.dmg"
 
-          # Retry logic using `until` loop — this WILL BREAK the workflow if `hdiutil` fails
+          max_tries=10
+          i=0
           until hdiutil create -volname "$APP_NAME" -srcfolder "$APP_PATH" -ov -format UDZO "$DMG_PATH"; do
+            echo "Attempt $i failed"
             if [ $i -eq $max_tries ]; then
-              echo "Error: hdiutil did not succeed even after $max_tries tries."  # Log failure
-              exit 1  # Stop the workflow
+              echo "hdiutil failed after $max_tries retries"
+              exit 1
             fi
-            ((i++))  # Increment retry counter
-            sleep 2  # Wait 2 seconds before retry
+            ((i++))
+            sleep 2
           done
+
+      # Step 4: Detach the dummy volume (clean-up)
+      - name: Detach dummy volume
+        run: |
+          MOUNTED_VOL=$(hdiutil info | grep /Volumes/DummyVolume | awk '{print $1}')
+          if [[ -n "$MOUNTED_VOL" ]]; then
+            hdiutil detach "$MOUNTED_VOL" || true
+          fi
 
