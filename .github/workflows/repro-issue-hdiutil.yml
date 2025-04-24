@@ -1,0 +1,39 @@
+name: Reproduce DMG Failure
+
+# Trigger this workflow manually from GitHub UI
+on:
+  workflow_dispatch:
+
+jobs:
+  create-dmg:
+    runs-on: macos-13  # Targeting macOS 13 where the issue is commonly observed
+
+    steps:
+      # Step 1: Prepare a fake .app directory structure to simulate a macOS app
+      - name: Prepare dummy app
+        run: |
+          mkdir -p dist/TauonMusicBox.app/Contents  # Create required folders
+          echo "Dummy app" > dist/TauonMusicBox.app/Contents/Info.plist  # Add dummy file
+
+      # Step 2: Attempt to create a DMG with retry logic
+      # This version WILL FAIL if `hdiutil` returns a non-zero exit code even once
+      - name: Create DMG with retries (will fail if hdiutil fails)
+        run: |
+          mkdir -p dist/dmg  # Create output folder
+          APP_NAME="TauonMusicBox"  # App name and volume name
+          APP_PATH="dist/${APP_NAME}.app"  # Source folder for DMG
+          DMG_PATH="dist/dmg/${APP_NAME}-x64.dmg"  # Destination path for DMG
+
+          max_tries=10  # Max number of retry attempts
+          i=0  # Initialize retry counter
+
+          # Retry logic using `until` loop — this WILL BREAK the workflow if `hdiutil` fails
+          until hdiutil create -volname "$APP_NAME" -srcfolder "$APP_PATH" -ov -format UDZO "$DMG_PATH"; do
+            if [ $i -eq $max_tries ]; then
+              echo "Error: hdiutil did not succeed even after $max_tries tries."  # Log failure
+              exit 1  # Stop the workflow
+            fi
+            ((i++))  # Increment retry counter
+            sleep 2  # Wait 2 seconds before retry
+          done
+
