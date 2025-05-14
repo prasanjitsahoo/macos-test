@@ -1,67 +1,73 @@
-# Name of the workflow shown in GitHub Actions UI
-name: Reproduce hdiutil Resource Busy Error (Heavy Test)
+name: Reproduce hdiutil Resource Busy Error (Heavy Test with Large Files)
 
-# This workflow will run manually using the GitHub UI
 on:
   workflow_dispatch:
 
 jobs:
-  # Job name: each job will simulate a separate environment to trigger the error
   create-dmg-parallel:
-    runs-on: macos-13  # Use macOS 13 runner where this error is most commonly reported
+    runs-on: macos-13
 
-    # Use matrix strategy to run this job 3 times in parallel with different indexes
     strategy:
+      fail-fast: false  # Ensures all jobs run even if one fails
       matrix:
-        job_index: [1, 2, 3]  # Simulate concurrency (like multiple commits/pushes)
+        job_index: [1, 2, 3]  # Run 3 jobs in parallel
 
     steps:
-      # Step 1: Create a fake .app bundle with a large dummy binary to increase disk activity
-      - name: Prepare large dummy .app structure
+      # Step 1: Create a large dummy .app structure to simulate Xcode-like application size
+      - name: Prepare large and complex dummy .app structure
         run: |
-          mkdir -p dist/TauonMusicBox.app/Contents  # Create required folder structure
-          echo "<?xml version='1.0'?>" > dist/TauonMusicBox.app/Contents/Info.plist  # Add fake Info.plist
-          dd if=/dev/urandom of=dist/TauonMusicBox.app/Contents/LargeBinary bs=5M count=5  # Add 25MB dummy binary file
+          mkdir -p dist/XcodeDummy.app/Contents/Developer/Applications  # Create nested structure
+          
+          # Add a large binary file (100MB) to simulate a voluminous app
+          dd if=/dev/urandom of=dist/XcodeDummy.app/Contents/LargeBinary bs=10M count=10
 
-      # Step 2: Simulate disk contention by mounting multiple dummy DMGs
-      - name: Simulate additional I/O with multiple mounted DMGs
-        run: |
-          mkdir -p temp_mount  # Temporary folder to hold dummy disk sources
-          for i in {1..4}; do
-            mkdir -p "temp_mount/disk$i"  # Create empty folders for each disk
-            hdiutil create -volname "Vol$i" -srcfolder "temp_mount/disk$i" -ov -format UDZO "vol$i.dmg"  # Create DMG from each folder
-            hdiutil attach "vol$i.dmg" || true  # Mount each DMG; ignore if fails
-          done  # This step helps simulate parallel usage of disk resources
-
-      # Step 3: Attempt to create the actual DMG with retry logic
-      - name: Attempt to create real DMG with retries
-        run: |
-          mkdir -p dist/dmg  # Ensure output folder exists
-          APP_NAME="TauonMusicBox"  # Set app name
-          APP_PATH="dist/${APP_NAME}.app"  # Set path to the fake app bundle
-          DMG_PATH="dist/dmg/${APP_NAME}-${{ matrix.job_index }}.dmg"  # Name of the output DMG, varies by job index
-
-          max_tries=10  # Retry up to 10 times
-          i=0  # Retry attempt counter
-
-          # Retry loop: hdiutil may fail due to "Resource busy", so retry until success or max_tries
-          until hdiutil create -volname "$APP_NAME" -srcfolder "$APP_PATH" -ov -format UDZO "$DMG_PATH"; do
-            echo "Attempt $i failed" >> create_dmg.log  # Log each failure attempt
-            if [ $i -eq $max_tries ]; then
-              echo "hdiutil failed after $max_tries retries" >> create_dmg.log  # Log final failure
-              exit 1  # Exit job if max retries reached
-            fi
-            ((i++))  # Increment counter
-            sleep 2  # Wait 2 seconds before trying again
+          # Add additional nested directories to increase complexity
+          for i in {1..5}; do
+            mkdir -p dist/XcodeDummy.app/Contents/Resources/Folder$i
+            dd if=/dev/urandom of=dist/XcodeDummy.app/Contents/Resources/Folder$i/BigFile bs=10M count=5
           done
-          echo "DMG created successfully on attempt $i" >> create_dmg.log  # Log success
+          
+          echo "<?xml version='1.0'?>" > dist/XcodeDummy.app/Contents/Info.plist  # Minimal plist
 
-      # Step 4: Upload the log and output DMG for debugging (even if job fails)
-      - name: Upload logs and output DMG (for debugging)
-        if: always()  # Run this step regardless of success/failure of previous steps
-        uses: actions/upload-artifact@v4  # Upload artifacts for later inspection
+      # Step 2: Simulate disk I/O by attaching multiple DMGs concurrently
+      - name: Attach multiple dummy DMGs to create resource contention
+        run: |
+          mkdir -p temp_mount
+          for i in {1..5}; do
+            mkdir -p "temp_mount/disk$i"
+            dd if=/dev/urandom of="temp_mount/disk$i/LargeFile" bs=50M count=2  # Each DMG with 100MB of random data
+            hdiutil create -volname "DummyVol$i" -srcfolder "temp_mount/disk$i" -ov -format UDZO "dummy_vol$i.dmg"
+            hdiutil attach "dummy_vol$i.dmg" || true  # Attach the DMG to simulate mounted volumes
+          done
+
+      # Step 3: Attempt to create the main DMG with retry logic
+      - name: Attempt to create the real DMG with retries
+        run: |
+          mkdir -p dist/dmg
+          APP_NAME="XcodeDummy"
+          APP_PATH="dist/${APP_NAME}.app"
+          DMG_PATH="dist/dmg/${APP_NAME}-${{ matrix.job_index }}.dmg"
+
+          max_tries=10
+          i=0
+          # Retry loop for hdiutil with error handling
+          until hdiutil create -volname "$APP_NAME" -srcfolder "$APP_PATH" -ov -format UDZO "$DMG_PATH"; do
+            echo "Attempt $i failed" >> create_dmg.log  # Log each failed attempt
+            if [ $i -eq $max_tries ]; then
+              echo "hdiutil failed after $max_tries retries" >> create_dmg.log
+              exit 1
+            fi
+            ((i++))
+            sleep 2  # Wait before retrying
+          done
+          echo "DMG created successfully on attempt $i" >> create_dmg.log
+
+      # Step 4: Upload logs and DMG output for analysis
+      - name: Upload logs and DMG
+        if: always()  # Run even if previous steps failed
+        uses: actions/upload-artifact@v4  # Use the latest stable version
         with:
-          name: dmg-output-job-${{ matrix.job_index }}  # Artifact name includes job index
+          name: dmg-output-job-${{ matrix.job_index }}
           path: |
-            create_dmg.log  # Upload retry log
-            dist/dmg/*.dmg  # Upload the generated DMG (if created)
+            create_dmg.log
+            dist/dmg/*.dmg
