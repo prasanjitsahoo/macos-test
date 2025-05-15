@@ -1,6 +1,6 @@
 on:
- workflow_dispatch:
-    
+  workflow_dispatch:
+
 name: Nightly release
 
 jobs:
