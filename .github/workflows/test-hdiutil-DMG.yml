@@ -1,107 +1,47 @@
-name: Repro DMG Error – With and Without Retry
+name: sangeeth Reproduce hdiutil "Resource busy" Error
 
-# Allows manual trigger from GitHub UI
 on:
   workflow_dispatch:
     inputs:
-      build_id:
-        description: "Simulated build ID"
+      repeat:
+        description: "Number of times to repeat DMG creation"
+        default: "10"
         required: false
-        default: "1"
 
 jobs:
-  # ──────────────
-  # No Retry Job
-  # ──────────────
-  no-retry:
+  repro-dmg:
     runs-on: macos-13
-    name: No Retry – Build ${{ github.event.inputs.build_id }}
+    name: Repro – hdiutil Test
 
     steps:
-      # Create a fake .app bundle with a 10MB payload
-      - name: Create realistic .app bundle (~10MB)
+      - name: Create dummy .app bundle with large binary
         run: |
-          mkdir -p SampleApp/Sample.app/Contents/MacOS
-          base64 /dev/urandom | head -c 10000000 > SampleApp/Sample.app/Contents/MacOS/Payload
-          chmod +x SampleApp/Sample.app/Contents/MacOS/Payload
+          mkdir -p MyApp.app/Contents/MacOS
+          base64 /dev/urandom | head -c 10000000 > MyApp.app/Contents/MacOS/Payload
+          chmod +x MyApp.app/Contents/MacOS/Payload
+          echo "Created dummy .app bundle"
 
-      # Prepare output directory for .dmg
-      - name: Create output folder
+      - name: Make output dir
         run: mkdir output
 
-      # Run hdiutil once (no retry)
-      - name: Run hdiutil create (no retry)
+      - name: Attempt hdiutil DMG creation multiple times
         run: |
-          echo "Attempting DMG creation (no retry) for build ID ${{ github.event.inputs.build_id }}"
-          hdiutil create -volname "Sample" \
-                         -srcfolder SampleApp/Sample.app \
-                         -ov \
-                         -format UDZO \
-                         output/Sample_${{ github.event.inputs.build_id }}.dmg
+          for i in $(seq 1 ${{ github.event.inputs.repeat }}); do
+            echo "======== Attempt $i ========"
+            hdiutil create -volname "TestApp" \
+                           -srcfolder MyApp.app \
+                           -ov -format UDZO \
+                           output/TestApp_$i.dmg && echo "✅ Success on attempt $i" && continue
 
-      # Show open files or processes if it fails
-      - name: Debug Resource Usage
-        if: failure()
-        run: |
-          echo "Listing open files related to .dmg (no-retry job)"
-          lsof | grep .dmg || true
-          ps aux | grep hdiutil || true
-
-      # Upload artifact if successful
-      - name: Upload DMG (if created)
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: NoRetry-SampleApp-DMG-${{ github.event.inputs.build_id }}
-          path: output/*.dmg
-
-  # ──────────────
-  # With Retry Job
-  # ──────────────
-  with-retry:
-    runs-on: macos-13
-    name: With Retry – Build ${{ github.event.inputs.build_id }}
-
-    steps:
-      # Create similar fake .app bundle (separate folder)
-      - name: Create realistic .app bundle (~10MB)
-        run: |
-          mkdir -p App/Sample.app/Contents/MacOS
-          base64 /dev/urandom | head -c 10000000 > App/Sample.app/Contents/MacOS/Payload
-          chmod +x App/Sample.app/Contents/MacOS/Payload
-
-      # Prepare output directory
-      - name: Create output folder
-        run: mkdir output
-
-      # hdiutil create with retry loop (3 attempts)
-      - name: Run hdiutil create with retry
-        run: |
-          echo "Attempting DMG creation (with retry) for build ID ${{ github.event.inputs.build_id }}"
-          for attempt in {1..3}; do
-            echo "Attempt $attempt..."
-            hdiutil create -volname "Sample" \
-                           -srcfolder App/Sample.app \
-                           -ov \
-                           -format UDZO \
-                           output/Sample_Retry_${{ github.event.inputs.build_id }}.dmg && break || {
-              echo "Attempt $attempt failed. Retrying in 2 seconds..."
-              sleep 2
-            }
+            echo "❌ Failed on attempt $i"
+            echo "::warning::Trying to collect diagnostics for hdiutil failure"
+            lsof | grep .dmg || true
+            ps aux | grep hdiutil || true
+            exit 1
           done
 
-      # Log file usage on failure
-      - name: Debug Resource Usage
-        if: failure()
-        run: |
-          echo "Listing open files related to .dmg (retry job)"
-          lsof | grep .dmg || true
-          ps aux | grep hdiutil || true
-
-      # Upload artifact if DMG is created
-      - name: Upload DMG (if created)
-        if: success()
+      - name: Upload last DMG (if any)
         uses: actions/upload-artifact@v4
         with:
-          name: Retry-SampleApp-DMG-${{ github.event.inputs.build_id }}
+          name: Last-DMG
           path: output/*.dmg
